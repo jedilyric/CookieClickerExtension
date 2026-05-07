@@ -11,13 +11,13 @@
 
   // ─── Configuration ────────────────────────────────────────────────────────
   const CFG = {
-    clicksPerSecond: 500,       // clicks/sec on the big cookie
+    clicksPerSecond: 5000,      // clicks/sec on the big cookie (10× original)
     buyCheckMs: 150,            // how often to run the buying loop
     goldenCheckMs: 50,          // how often to scan for golden cookies
     wrinklerCheckMs: 800,       // how often to manage wrinklers
     ascendCheckMs: 8000,        // how often to evaluate ascension
     statusMs: 1000,             // how often to post status to the popup
-    gameFpsTarget: 240,         // raise game tick rate (default is 30)
+    gameFpsTarget: 2400,        // target loop call rate (10× original 240)
     ascendMinCookies: 1e12,     // minimum cookies earned before we'll ascend
     ascendMinGain: 100,         // minimum prestige to gain before ascending
     ascendPercentGain: 0.10,    // or ascend if gain is ≥10% of current prestige
@@ -56,9 +56,15 @@
     if (typeof Game === 'undefined') return;
     try {
       if (Game.loopInterval) clearInterval(Game.loopInterval);
-      Game.fps = CFG.gameFpsTarget;
-      Game.loopInterval = setInterval(Game.Loop, 1000 / CFG.gameFpsTarget);
-      console.log(`[CookieBot] Game loop boosted to ${CFG.gameFpsTarget} FPS`);
+      // Key insight: Game.Earn() is called as cookiesPs / Game.fps each loop tick.
+      // Keeping fps=30 (low) while calling Loop much more frequently multiplies
+      // passive income: net CPS = (callsPerSec / 30) × cookiesPs.
+      // At callsPerSec≈1000 (1ms browser floor): ~33× passive CPS.
+      Game.fps = 30;
+      const intervalMs = Math.max(1, Math.floor(1000 / CFG.gameFpsTarget));
+      Game.loopInterval = setInterval(Game.Loop, intervalMs);
+      const mult = Math.round((1000 / Math.max(intervalMs, 1)) / 30);
+      console.log(`[CookieBot] Loop boosted: ~${mult}× passive CPS (interval=${intervalMs}ms, fps=30)`);
     } catch (e) {
       console.warn('[CookieBot] Could not boost FPS:', e);
     }
@@ -107,9 +113,8 @@
   // ─── Buying Strategy ─────────────────────────────────────────────────────
   function runBuyingStrategy() {
     if (!gameReady()) return;
-
-    buyUpgrades();
-    buyBestBuilding();
+    buyUpgrades();     // upgrades first — they unlock immediately and multiply CPS
+    buyBestBuilding(); // then find the best bulk-buy across all building types
   }
 
   function buyUpgrades() {
@@ -127,29 +132,55 @@
     const objs = Game.ObjectsById;
     if (!objs) return;
 
-    const cookies = Game.cookies;
+    const budget = Game.cookies;
+    if (budget <= 0) return;
+
+    // Cookie Clicker price scaling: each purchase costs 1.15× the previous one.
+    // Total cost of buying k units from current price P:
+    //   P × (1.15^k − 1) / 0.15
+    // → max affordable k: floor(log(1 + 0.15×budget/P) / log(1.15))
+    // We compare (k × cpsPerUnit) / totalSpend across all building types and
+    // pick the one with the highest CPS-per-cookie-spent, then buy that many.
+    const SCALE = 1.15;
+    const LOG_SCALE = Math.log(SCALE);
+
     let best = null;
-    let bestScore = -1;
+    let bestQty = 1;
+    let bestEff = -1;
 
     for (let i = 0; i < objs.length; i++) {
       const b = objs[i];
-      if (!b || b.locked || b.price > cookies) continue;
+      if (!b || b.locked || b.price > budget) continue;
 
-      // Efficiency: estimated CPS gain / price
       const amt = b.amount || 0;
       const storedCps = b.storedCps || 0;
-      const baseCps = b.baseCps || 0.001;
-      const cpsGain = amt > 0 ? storedCps / amt : baseCps;
-      const score = (cpsGain + 1e-9) / b.price;
+      const baseCps = b.baseCps || 1e-9;
+      // Each additional unit of a type adds the same CPS as the average existing unit
+      // (all units share the same multiplicative upgrade bonuses).
+      const cpsPerUnit = amt > 0 ? Math.max(storedCps / amt, baseCps) : baseCps;
 
-      if (score > bestScore) {
-        bestScore = score;
+      const maxK = Math.max(1, Math.floor(
+        Math.log(1 + (SCALE - 1) * budget / b.price) / LOG_SCALE
+      ));
+
+      const spend = b.price * (Math.pow(SCALE, maxK) - 1) / (SCALE - 1);
+      const gain  = maxK * cpsPerUnit;
+      const eff   = gain / Math.max(spend, 1e-9);
+
+      if (eff > bestEff) {
+        bestEff = eff;
         best = b;
+        bestQty = maxK;
       }
     }
 
     if (best) {
-      try { best.buy(1); session.buildings++; } catch (_) {}
+      for (let i = 0; i < bestQty; i++) {
+        if (best.price > Game.cookies) break;
+        try { best.buy(1); session.buildings++; } catch (_) { break; }
+      }
+      // Re-run upgrades: buying buildings unlocks new ones at milestones (10, 25, 50…)
+      buyUpgrades();
     }
   }
 
@@ -305,7 +336,7 @@
         enabled = !!cmd.value;
         break;
       case 'setSpeed':
-        CFG.gameFpsTarget = Math.max(30, Math.min(1000, cmd.value));
+        CFG.gameFpsTarget = Math.max(30, Math.min(10000, cmd.value));
         speedUpGame();
         break;
       case 'getStatus':

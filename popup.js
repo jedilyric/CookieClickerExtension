@@ -84,7 +84,7 @@
 
   $('speedSlider').addEventListener('input', (e) => {
     const fps = parseInt(e.target.value, 10);
-    $('speedLabel').textContent = fps + ' FPS';
+    $('speedLabel').textContent = fps + '/s';
     sendCmd('setSpeed', fps);
     chrome.storage.local.set({ gameFps: fps });
   });
@@ -95,7 +95,7 @@
     chrome.storage.local.get(['gameFps', 'botStatus'], (res) => {
       if (res.gameFps) {
         $('speedSlider').value = res.gameFps;
-        $('speedLabel').textContent = res.gameFps + ' FPS';
+        $('speedLabel').textContent = res.gameFps + '/s';
       }
       if (res.botStatus) applyStatus(res.botStatus);
     });
