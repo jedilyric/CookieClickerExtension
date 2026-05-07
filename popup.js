@@ -41,7 +41,7 @@
     $('cookies').textContent   = fmt(d.cookies);
     $('cps').textContent       = fmt(d.cookiesPs) + '/s';
     $('prestige').textContent  = fmt(d.prestige);
-    $('fps').textContent       = (d.fps || 0) + ' fps';
+    $('fps').textContent       = (d.earnMultiplier || d.fps || 0) + '×';
     $('earned').textContent    = fmt(d.cookiesEarned);
 
     const s = d.session || {};

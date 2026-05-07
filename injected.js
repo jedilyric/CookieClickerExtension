@@ -11,13 +11,17 @@
 
   // ─── Configuration ────────────────────────────────────────────────────────
   const CFG = {
-    clicksPerSecond: 5000,      // clicks/sec on the big cookie (10× original)
-    buyCheckMs: 150,            // how often to run the buying loop
+    clicksPerTick: 50,          // clicks fired per 1ms interval (~50,000/sec effective)
+    buyCheckMs: 100,            // how often to run the buying loop
     goldenCheckMs: 50,          // how often to scan for golden cookies
     wrinklerCheckMs: 800,       // how often to manage wrinklers
     ascendCheckMs: 8000,        // how often to evaluate ascension
     statusMs: 1000,             // how often to post status to the popup
-    gameFpsTarget: 2400,        // target loop call rate (10× original 240)
+    gameFpsTarget: 2400,        // target Loop call rate; maps to 1ms → ~1000 calls/sec
+    // Game.Earn() multiplier — every income event (passive tick, click, golden cookie,
+    // wrinkler pop) flows through Game.Earn, so 1000× here means ~33,000× passive CPS
+    // on top of the Loop-rate boost. Safe: CC uses floats up to ~1.8e308.
+    earnMultiplier: 1000,
     ascendMinCookies: 1e12,     // minimum cookies earned before we'll ascend
     ascendMinGain: 100,         // minimum prestige to gain before ascending
     ascendPercentGain: 0.10,    // or ascend if gain is ≥10% of current prestige
@@ -51,32 +55,48 @@
     return Math.floor(n).toString();
   }
 
+  // ─── Game.Earn Patch ──────────────────────────────────────────────────────
+  // Multiplies every income event at the source. Passive ticks, manual clicks,
+  // golden cookies, and wrinkler pops all call Game.Earn internally.
+  // Safe to call repeatedly — skips if already patched.
+  function patchEarn() {
+    if (typeof Game === 'undefined' || typeof Game.Earn !== 'function') return;
+    if (Game.Earn.__botPatched) return;
+    const orig = Game.Earn.bind(Game);
+    Game.Earn = function (n) { return orig(n * CFG.earnMultiplier); };
+    Game.Earn.__botPatched = true;
+    console.log(`[CookieBot] Game.Earn patched — ${CFG.earnMultiplier}× multiplier active`);
+  }
+
   // ─── Game Speed Boost ─────────────────────────────────────────────────────
   function speedUpGame() {
     if (typeof Game === 'undefined') return;
     try {
+      // Loop rate boost: keep fps=30 so each tick earns cookiesPs/30 cookies,
+      // then call Loop at ~1000/sec (browser 1ms floor).
+      // Net passive from Loop alone: ~1000/30 ≈ 33× CPS.
+      // Combined with earnMultiplier=1000: ~33,000× total passive CPS.
       if (Game.loopInterval) clearInterval(Game.loopInterval);
-      // Key insight: Game.Earn() is called as cookiesPs / Game.fps each loop tick.
-      // Keeping fps=30 (low) while calling Loop much more frequently multiplies
-      // passive income: net CPS = (callsPerSec / 30) × cookiesPs.
-      // At callsPerSec≈1000 (1ms browser floor): ~33× passive CPS.
       Game.fps = 30;
       const intervalMs = Math.max(1, Math.floor(1000 / CFG.gameFpsTarget));
       Game.loopInterval = setInterval(Game.Loop, intervalMs);
-      const mult = Math.round((1000 / Math.max(intervalMs, 1)) / 30);
-      console.log(`[CookieBot] Loop boosted: ~${mult}× passive CPS (interval=${intervalMs}ms, fps=30)`);
+      // Earn patch on top — covers any re-initialization after Reincarnate
+      patchEarn();
+      console.log(`[CookieBot] Speed active: Loop@${intervalMs}ms, fps=30, earn×${CFG.earnMultiplier}`);
     } catch (e) {
-      console.warn('[CookieBot] Could not boost FPS:', e);
+      console.warn('[CookieBot] Could not boost speed:', e);
     }
   }
 
   // ─── Clicking ────────────────────────────────────────────────────────────
-  function clickCookie() {
-    if (!gameReady()) return;
-    try {
-      Game.ClickCookie();
-      session.clicks++;
-    } catch (_) {}
+  // Batch multiple clicks per 1ms tick instead of one click per interval.
+  // ClickCookie also calls Game.Earn internally, so each click is multiplied too.
+  function clickBatch() {
+    if (!enabled || !gameReady()) return;
+    for (let i = 0; i < CFG.clicksPerTick; i++) {
+      try { Game.ClickCookie(); } catch (_) { break; }
+    }
+    session.clicks += CFG.clicksPerTick;
   }
 
   // ─── Golden Cookies & Shimmers ────────────────────────────────────────────
@@ -248,8 +268,8 @@
         console.warn('[CookieBot] Reincarnate error:', e);
       } finally {
         ascending = false;
-        // Re-apply speed boost after game reinit
-        setTimeout(speedUpGame, 3000);
+        // Re-apply speed boost and earn patch after game reinit
+        setTimeout(() => { speedUpGame(); patchEarn(); }, 3000);
       }
     }, 2500);
   }
@@ -314,6 +334,7 @@
         cookiesEarned: typeof Game !== 'undefined' ? (Game.cookiesEarned || 0) : 0,
         prestige: typeof Game !== 'undefined' ? (Game.prestige || 0) : 0,
         fps: typeof Game !== 'undefined' ? (Game.fps || 0) : 0,
+        earnMultiplier: CFG.earnMultiplier,
         buildings: typeof Game !== 'undefined' && Game.ObjectsById
           ? Game.ObjectsById.reduce((s, b) => s + (b ? b.amount : 0), 0) : 0,
         session: { ...session },
@@ -337,6 +358,8 @@
         break;
       case 'setSpeed':
         CFG.gameFpsTarget = Math.max(30, Math.min(10000, cmd.value));
+        // Scale earn multiplier with speed slider: 100× at min, 1000× at max
+        CFG.earnMultiplier = Math.max(100, Math.round(CFG.gameFpsTarget / 2.4));
         speedUpGame();
         break;
       case 'getStatus':
@@ -358,19 +381,18 @@
     console.log('[CookieBot] Game detected — launching ultra bot!');
     speedUpGame();
 
-    const clickDelayMs = Math.max(1, Math.floor(1000 / CFG.clicksPerSecond));
-    intervals.click    = setInterval(clickCookie,         clickDelayMs);
+    intervals.click    = setInterval(clickBatch,          1);                 // 1ms = max rate
     intervals.buy      = setInterval(runBuyingStrategy,   CFG.buyCheckMs);
     intervals.golden   = setInterval(clickGoldenCookies,  CFG.goldenCheckMs);
     intervals.wrinkler = setInterval(manageWrinklers,     CFG.wrinklerCheckMs);
     intervals.ascend   = setInterval(checkAscension,      CFG.ascendCheckMs);
     intervals.status   = setInterval(reportStatus,        CFG.statusMs);
 
-    // Watch for game resets / reloads and re-apply speed boost
+    // Re-apply speed and earn patch if the game reinitializes (page reload, reset)
     const observer = new MutationObserver(() => {
-      if (typeof Game !== 'undefined' && Game.ready && Game.fps < CFG.gameFpsTarget) {
-        speedUpGame();
-      }
+      if (typeof Game === 'undefined' || !Game.ready) return;
+      if (Game.fps < CFG.gameFpsTarget) speedUpGame();
+      if (!Game.Earn.__botPatched) patchEarn();
     });
     observer.observe(document.body, { childList: true, subtree: false });
   }
