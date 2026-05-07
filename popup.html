@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cookie Clicker Ultra Bot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      background: #1a0e00;
+      color: #f5deb3;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 13px;
+    }
+
+    header {
+      background: linear-gradient(135deg, #7b3f00, #c8860a);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    header .cookie-icon { font-size: 28px; }
+    header h1 { font-size: 15px; font-weight: 700; color: #fff; line-height: 1.2; }
+    header h1 small { font-size: 11px; font-weight: 400; opacity: 0.85; }
+
+    .badge {
+      margin-left: auto;
+      padding: 3px 9px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .badge.on  { background: #2ecc40; color: #003300; }
+    .badge.off { background: #e74c3c; color: #fff; }
+    .badge.wait { background: #f39c12; color: #000; }
+
+    section { padding: 12px 14px; border-bottom: 1px solid #3a1f00; }
+    section:last-child { border-bottom: none; }
+
+    h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+         color: #c8860a; margin-bottom: 8px; }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .stat {
+      background: #2a1500;
+      border-radius: 6px;
+      padding: 7px 10px;
+    }
+    .stat .label { font-size: 10px; color: #a07840; margin-bottom: 2px; }
+    .stat .value { font-size: 14px; font-weight: 700; color: #ffd700; word-break: break-all; }
+
+    .stat.wide { grid-column: span 2; }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .row:last-child { margin-bottom: 0; }
+    .row label { font-size: 12px; color: #d4a96a; }
+
+    /* Toggle switch */
+    .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0;
+      background: #555; border-radius: 24px; cursor: pointer;
+      transition: background 0.25s;
+    }
+    .slider:before {
+      content: ''; position: absolute;
+      width: 18px; height: 18px; left: 3px; top: 3px;
+      background: #fff; border-radius: 50%;
+      transition: transform 0.25s;
+    }
+    .toggle input:checked + .slider { background: #2ecc40; }
+    .toggle input:checked + .slider:before { transform: translateX(20px); }
+
+    /* Speed slider */
+    input[type=range] {
+      width: 100%; accent-color: #c8860a; cursor: pointer;
+    }
+    .speed-labels {
+      display: flex; justify-content: space-between;
+      font-size: 10px; color: #a07840; margin-top: 2px;
+    }
+
+    /* Big button */
+    .btn {
+      display: block; width: 100%; padding: 9px;
+      border: none; border-radius: 6px; cursor: pointer;
+      font-size: 13px; font-weight: 700; transition: filter 0.15s;
+    }
+    .btn:hover { filter: brightness(1.15); }
+    .btn-green  { background: #27ae60; color: #fff; }
+    .btn-orange { background: #c8860a; color: #fff; margin-top: 6px; }
+
+    .no-game {
+      padding: 20px 14px;
+      text-align: center;
+      color: #a07840;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .no-game a { color: #c8860a; text-decoration: none; }
+    .no-game a:hover { text-decoration: underline; }
+
+    footer {
+      padding: 8px 14px;
+      text-align: center;
+      font-size: 10px;
+      color: #5a3a10;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="cookie-icon">🍪</span>
+  <div>
+    <h1>Cookie Clicker<br><small>Ultra Bot</small></h1>
+  </div>
+  <span class="badge wait" id="statusBadge">Loading…</span>
+</header>
+
+<div id="noGame" class="no-game" style="display:none">
+  <p>Cookie Clicker is not open.<br>
+  <a href="https://orteil.dashnet.org/cookieclicker/" target="_blank">
+    Open Cookie Clicker →
+  </a></p>
+</div>
+
+<div id="main" style="display:none">
+
+  <section>
+    <h2>Live Stats</h2>
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="label">Cookies</div>
+        <div class="value" id="cookies">—</div>
+      </div>
+      <div class="stat">
+        <div class="label">Per Second</div>
+        <div class="value" id="cps">—</div>
+      </div>
+      <div class="stat">
+        <div class="label">Prestige</div>
+        <div class="value" id="prestige">—</div>
+      </div>
+      <div class="stat">
+        <div class="label">Game FPS</div>
+        <div class="value" id="fps">—</div>
+      </div>
+      <div class="stat wide">
+        <div class="label">Total Earned This Run</div>
+        <div class="value" id="earned">—</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Session Stats</h2>
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="label">Clicks</div>
+        <div class="value" id="sClicks">0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Golden Cookies</div>
+        <div class="value" id="sGolden">0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Upgrades Bought</div>
+        <div class="value" id="sUpgrades">0</div>
+      </div>
+      <div class="stat">
+        <div class="label">Buildings Bought</div>
+        <div class="value" id="sBuildings">0</div>
+      </div>
+      <div class="stat wide">
+        <div class="label">Ascensions Triggered</div>
+        <div class="value" id="sAscensions">0</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Controls</h2>
+    <div class="row">
+      <label>Bot Active</label>
+      <label class="toggle">
+        <input type="checkbox" id="toggleBot" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="row" style="display:block">
+      <label>Game Speed: <strong id="speedLabel">240 FPS</strong></label>
+      <input type="range" id="speedSlider" min="30" max="1000" step="30" value="240" />
+      <div class="speed-labels"><span>Normal</span><span>Turbo</span><span>Ultra</span></div>
+    </div>
+  </section>
+
+</div>
+
+<footer>Cookie Clicker Ultra Bot v1.0</footer>
+
+<script src="popup.js"></script>
+</body>
+</html>

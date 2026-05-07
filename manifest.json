@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Cookie Clicker Ultra Bot",
+  "version": "1.0.0",
+  "description": "Auto-plays Cookie Clicker at record speed — clicks, buys, ascends, and hunts achievements automatically.",
+  "permissions": ["activeTab", "storage", "tabs"],
+  "host_permissions": ["https://orteil.dashnet.org/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://orteil.dashnet.org/cookieclicker/"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Cookie Clicker Ultra Bot"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["https://orteil.dashnet.org/*"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
